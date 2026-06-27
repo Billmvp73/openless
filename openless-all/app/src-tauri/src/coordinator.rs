@@ -25,8 +25,8 @@ use crate::asr::local::{
     foundry, sherpa, FoundryLocalRuntime, FoundryLocalWhisperAsr, SherpaOnnxAsr, SherpaOnnxRuntime,
 };
 use crate::asr::{
-    BailianCredentials, BailianRealtimeASR, DictionaryHotword, MimoBatchASR, RawTranscript,
-    VolcengineCredentials, VolcengineStreamingASR, WhisperBatchASR,
+    BailianCredentials, BailianRealtimeASR, DictionaryHotword, ElevenLabsBatchASR, MimoBatchASR,
+    RawTranscript, VolcengineCredentials, VolcengineStreamingASR, WhisperBatchASR,
 };
 use crate::combo_hotkey::{ComboHotkeyError, ComboHotkeyEvent, ComboHotkeyMonitor};
 use crate::coordinator_state::{
@@ -176,6 +176,7 @@ enum ActiveAsr {
     Volcengine(Arc<VolcengineStreamingASR>),
     Whisper(Arc<WhisperBatchASR>),
     Mimo(Arc<MimoBatchASR>),
+    ElevenLabs(Arc<ElevenLabsBatchASR>),
     Bailian(Arc<BailianRealtimeASR>),
     #[cfg(target_os = "windows")]
     FoundryLocalWhisper(Arc<FoundryLocalWhisperAsr>),
@@ -206,6 +207,7 @@ fn asr_transcribe_uses_global_timeout(asr: &ActiveAsr) -> bool {
 enum ActiveAsrProviderKind {
     Bailian,
     Mimo,
+    ElevenLabs,
     WhisperCompatible,
     Volcengine,
 }
@@ -215,6 +217,8 @@ fn active_asr_provider_kind(id: &str) -> ActiveAsrProviderKind {
         ActiveAsrProviderKind::Bailian
     } else if is_mimo_provider(id) {
         ActiveAsrProviderKind::Mimo
+    } else if is_elevenlabs_provider(id) {
+        ActiveAsrProviderKind::ElevenLabs
     } else if is_whisper_compatible_provider(id) {
         ActiveAsrProviderKind::WhisperCompatible
     } else {
@@ -1540,6 +1544,10 @@ impl Coordinator {
                 .await
                 .map_err(|_| "重新转录超时".to_string())?
                 .map_err(|e| e.to_string())?,
+            ActiveAsr::ElevenLabs(e) => tokio::time::timeout(timeout, e.transcribe())
+                .await
+                .map_err(|_| "重新转录超时".to_string())?
+                .map_err(|e| e.to_string())?,
             #[cfg(target_os = "windows")]
             ActiveAsr::FoundryLocalWhisper(local) => local
                 .transcribe(foundry_audio_transcribe_timeout_duration())
@@ -1927,6 +1935,24 @@ fn read_mimo_credentials() -> (String, String, String) {
         .flatten()
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| crate::asr::mimo::DEFAULT_MODEL.to_string());
+    (api_key, base_url, model)
+}
+
+fn read_elevenlabs_credentials() -> (String, String, String) {
+    let api_key = CredentialsVault::get(CredentialAccount::AsrApiKey)
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    let base_url = CredentialsVault::get(CredentialAccount::AsrEndpoint)
+        .ok()
+        .flatten()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| crate::asr::elevenlabs::DEFAULT_ENDPOINT.to_string());
+    let model = CredentialsVault::get(CredentialAccount::AsrModel)
+        .ok()
+        .flatten()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| crate::asr::elevenlabs::DEFAULT_MODEL.to_string());
     (api_key, base_url, model)
 }
 
