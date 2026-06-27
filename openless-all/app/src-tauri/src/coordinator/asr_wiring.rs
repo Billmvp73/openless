@@ -107,6 +107,7 @@ pub(super) fn ensure_asr_credentials() -> Result<(), String> {
     if is_whisper_compatible_provider(&active_asr)
         || is_bailian_provider(&active_asr)
         || is_mimo_provider(&active_asr)
+        || is_elevenlabs_provider(&active_asr)
     {
         let api_key = CredentialsVault::get(CredentialAccount::AsrApiKey)
             .ok()
@@ -347,6 +348,10 @@ pub(super) fn is_mimo_provider(id: &str) -> bool {
     id == crate::asr::mimo::PROVIDER_ID
 }
 
+pub(super) fn is_elevenlabs_provider(id: &str) -> bool {
+    id == crate::asr::elevenlabs::PROVIDER_ID
+}
+
 pub(super) fn apply_chinese_script_preference(text: &str, pref: ChineseScriptPreference) -> String {
     if text.is_empty() {
         return String::new();
@@ -512,6 +517,13 @@ pub(super) async fn build_qa_asr_start(inner: &Arc<Inner>, active_asr: &str) -> 
             let mimo = Arc::new(MimoBatchASR::new(api_key, base_url, model));
             let active = ActiveAsr::Mimo(Arc::clone(&mimo));
             let consumer: Arc<dyn crate::recorder::AudioConsumer> = mimo;
+            Ok(QaAsrStart::Ready { active, consumer })
+        }
+        ActiveAsrProviderKind::ElevenLabs => {
+            let (api_key, base_url, model) = read_elevenlabs_credentials();
+            let elevenlabs = Arc::new(ElevenLabsBatchASR::new(api_key, base_url, model));
+            let active = ActiveAsr::ElevenLabs(Arc::clone(&elevenlabs));
+            let consumer: Arc<dyn crate::recorder::AudioConsumer> = elevenlabs;
             Ok(QaAsrStart::Ready { active, consumer })
         }
         ActiveAsrProviderKind::WhisperCompatible => {

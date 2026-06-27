@@ -6,6 +6,7 @@
 //! `volcengine.rs`.
 
 pub mod bailian;
+pub mod elevenlabs;
 mod frame;
 pub mod local;
 pub mod mimo;
@@ -15,6 +16,7 @@ pub mod wav;
 pub mod whisper;
 
 pub use bailian::{BailianCredentials, BailianRealtimeASR};
+pub use elevenlabs::ElevenLabsBatchASR;
 pub use mimo::MimoBatchASR;
 pub use volcengine::{VolcengineCredentials, VolcengineStreamingASR};
 pub use whisper::WhisperBatchASR;
