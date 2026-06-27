@@ -254,14 +254,26 @@ jobs:
           # 所以单一 `tauri build` 永远拿不到 NSIS 的 .exe.sig。
           # Pass 1：NSIS 独立跑——必须成功，产出 *_x64-setup.exe(.sig) 给 updater。
           # Pass 2：MSI 独立跑——允许失败，Repair 步骤兜底 light.exe 重链。
-          # Beta 版跳过 MSI：Windows Installer / WiX 无法表示 `1.2.3-Beta.1`
-          # 这类非纯数字 prerelease 标识，稳定版仍然照常产出 MSI。
+          # Beta / prerelease 版跳过 MSI：Windows Installer / WiX 无法表示
+          # `1.2.3-Beta.1` 这类非纯数字 prerelease 标识（msi bundler 直接报
+          # "optional pre-release identifier ... must be numeric-only"）。除了
+          # release tag 决定的 channel 之外，也按 tauri.conf.json 里的实际版本号
+          # 判定：这样 workflow_dispatch 的测试构建（channel 回退 stable）在
+          # Beta 版上也能正确跳过 MSI，只产出 NSIS，不让整步失败。稳定版
+          # （version 不含 '-'）仍照常产出 MSI。
+          APP_VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          case "$APP_VERSION" in *-*) VERSION_IS_PRERELEASE=1 ;; *) VERSION_IS_PRERELEASE=0 ;; esac
+          if [ "${OPENLESS_RELEASE_CHANNEL:-stable}" = "beta" ] || [ "$VERSION_IS_PRERELEASE" = "1" ]; then
+            SKIP_MSI=1
+          else
+            SKIP_MSI=0
+          fi
           if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
             npm run tauri -- build --bundles nsis --config '{"bundle":{"createUpdaterArtifacts":true}}'
             nsis_exit=$?
-            if [ "${OPENLESS_RELEASE_CHANNEL:-stable}" = "beta" ]; then
+            if [ "$SKIP_MSI" = "1" ]; then
               echo "OPENLESS_SKIP_WINDOWS_MSI=1" >> "$GITHUB_ENV"
-              echo "[info] Skipping MSI bundle for beta release channel."
+              echo "[info] Skipping MSI bundle (beta channel or prerelease version $APP_VERSION)."
               msi_exit=0
             else
               echo "OPENLESS_SKIP_WINDOWS_MSI=0" >> "$GITHUB_ENV"
@@ -271,9 +283,9 @@ jobs:
           else
             npm run tauri -- build --bundles nsis
             nsis_exit=$?
-            if [ "${OPENLESS_RELEASE_CHANNEL:-stable}" = "beta" ]; then
+            if [ "$SKIP_MSI" = "1" ]; then
               echo "OPENLESS_SKIP_WINDOWS_MSI=1" >> "$GITHUB_ENV"
-              echo "[info] Skipping MSI bundle for beta release channel."
+              echo "[info] Skipping MSI bundle (beta channel or prerelease version $APP_VERSION)."
               msi_exit=0
             else
               echo "OPENLESS_SKIP_WINDOWS_MSI=0" >> "$GITHUB_ENV"
